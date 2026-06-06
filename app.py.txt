@@ -1,0 +1,119 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="Painel de Produção Novatec", layout="wide")
+
+# --- SIMULAÇÃO DE DADOS (BASE DE EXEMPLO) ---
+@st.cache_data
+def carregar_dados():
+    dados_producao = {
+        'Horário da Coleta': ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00',
+                             '08:00', '09:00', '10:00', '11:00', '12:00', '13:00'],
+        'Maquina': ['Injetora 01', 'Injetora 01', 'Injetora 01', 'Injetora 01', 'Injetora 01', 'Injetora 01',
+                    'Corte CNC', 'Corte CNC', 'Corte CNC', 'Corte CNC', 'Corte CNC', 'Corte CNC'],
+        'Peças Boas': [160, 190, 220, 100, 210, 215,
+                       390, 420, 430, 160, 410, 440],
+        'Turno': ['Turno A', 'Turno A', 'Turno A', 'Turno B', 'Turno B', 'Turno B',
+                  'Turno A', 'Turno A', 'Turno A', 'Turno B', 'Turno B', 'Turno B']
+    }
+    
+    dados_paradas = {
+        'Motivo': ['Quebra de Correia', 'Manutenção', 'Limpeza', 'Troca de Molde', 'Ajuste'],
+        'Frequência': [9, 4, 3, 3, 8]
+    }
+    return pd.DataFrame(dados_producao), pd.DataFrame(dados_paradas)
+
+df_producao, df_paradas = carregar_dados()
+
+# --- BARRA LATERAL (FILTROS DE PRODUÇÃO) ---
+st.sidebar.header("🔍 Filtros de Produção")
+
+lista_turnos = ["Todos"] + list(df_producao['Turno'].unique())
+turno_selecionado = st.sidebar.selectbox("Selecione o Turno:", lista_turnos)
+
+lista_maquinas = ["Todas"] + list(df_producao['Maquina'].unique())
+maquina_selecionada = st.sidebar.selectbox("Selecione a Máquina:", lista_maquinas)
+
+st.sidebar.markdown("---")
+
+# --- BARRA LATERAL (GESTÃO DE METAS) ---
+st.sidebar.header("🎯 Gestão de Metas")
+meta_pecas = st.sidebar.slider("Meta de Peças Boas para o Período:", min_value=50, max_value=500, value=400, step=10)
+
+# --- APLICAÇÃO DOS FILTROS ---
+df_filtrado = df_producao.copy()
+if turno_selecionado != "Todos":
+    df_filtrado = df_filtrado[df_filtrado['Turno'] == turno_selecionado]
+if maquina_selecionada != "Todas":
+    df_filtrado = df_filtrado[df_filtrado['Maquina'] == maquina_selecionada]
+
+# --- CÁLCULOS DAS MÉTRICAS (KPIs) ---
+total_produzido = df_filtrado['Peças Boas'].sum()
+media_hora = df_filtrado['Peças Boas'].mean() if not df_filtrado.empty else 0
+eficiencia = (total_produzido / meta_pecas) * 100 if meta_pecas > 0 else 0
+
+# --- TÍTULO DO PAINEL PRINCIPAL ---
+st.title("Painel de Controle Operacional")
+st.markdown("Acompanhamento de produtividade e análise de falhas em tempo real.")
+st.markdown("---")
+
+# --- NOVIDADE: CARDS DE METRICAS (KPIs) ---
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric(label="Total Produzido", value=f"{total_produzido} un")
+
+with col2:
+    # O delta indica a porcentagem acima ou abaixo dos 100% da meta estipulada
+    variacao_meta = eficiencia - 100
+    st.metric(
+        label="Eficiência contra Meta", 
+        value=f"{eficiencia:.1f}%", 
+        delta=f"{variacao_meta:.1f}%"
+    )
+
+with col3:
+    st.metric(label="Média por Hora", value=f"{media_hora:.1f} un")
+
+st.markdown("---")
+
+# --- LAYOUT DE GRÁFICOS EM COLUNAS ---
+col_graf1, col_graf2 = st.columns([2, 1])
+
+with col_graf1:
+    st.subheader("Evolução da Produção Hora a Hora")
+    
+    if not df_filtrado.empty:
+        fig_linha = px.line(
+            df_filtrado, 
+            x='Horário da Coleta', 
+            y='Peças Boas', 
+            color='Maquina', 
+            markers=True,
+            template="plotly_dark"
+        )
+        
+        # NOVIDADE: LINHA HORIZONTAL DE META DINÂMICA
+        fig_linha.add_hline(
+            y=meta_pecas, 
+            line_dash="dash", 
+            line_color="red", 
+            annotation_text=f"META: {meta_pecas}", 
+            annotation_position="top left"
+        )
+        
+        st.plotly_chart(fig_linha, use_container_width=True)
+    else:
+        st.warning("Nenhum dado encontrado para os filtros selecionados.")
+
+with col_graf2:
+    st.subheader("Análise de Motivos de Parada")
+    fig_rosca = px.pie(
+        df_paradas, 
+        values='Frequência', 
+        names='Motivo', 
+        hole=0.5,
+        template="plotly_dark"
+    )
+    st.plotly_chart(fig_rosca, use_container_width=True)
